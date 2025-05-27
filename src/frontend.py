@@ -10,6 +10,7 @@ import cv2
 import torch
 from transformers import TimesformerModel, AutoImageProcessor
 import imageio
+import time
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -19,14 +20,14 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 @st.cache_resource
 def load_timesformer():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400").to(device).eval()
-    processor = AutoImageProcessor.from_pretrained("facebook/timesformer-base-finetuned-k400")  # <-- use matching processor
+    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400",trust_remote_code=True, 
+    use_safetensors=True).to(device).eval()
+    processor = AutoImageProcessor.from_pretrained("facebook/timesformer-base-finetuned-k400") 
     return model, processor, device
 
 def main():
     st.set_page_config(page_title="Video Similarity Search", layout="wide")
 
-    # Load FAISS indices and ID maps
     faiss_indices = {}
     id_maps = {}
     for emb_type in ["mean", "max", "cls"]:
@@ -59,9 +60,13 @@ def main():
                     else:
                         st.write("Preview not available")
 
+                    start_emb_time = time.time()
                     embs = get_video_embeddings_all(frames, model, processor, device)
+                    end_emb_time = time.time()
+                    embedding_duration = end_emb_time - start_emb_time
+                    st.success(f"Embedding extraction time: {embedding_duration:.2f} seconds")
 
-                    # Normalize embeddings
+
                     for key in embs:
                         embs[key] = embs[key] / np.linalg.norm(embs[key])
 
@@ -70,7 +75,12 @@ def main():
                     for tab, emb_type in zip(tabs, ["mean", "max", "cls"]):
                         with tab:
                             st.write(f"Results for {emb_type} embeddings:")
+                            start_search_time = time.perf_counter()
                             D, I = faiss_indices[emb_type].search(np.expand_dims(embs[emb_type], axis=0), k)
+                            end_search_time = time.perf_counter()
+                            search_duration = end_search_time - start_search_time
+                            st.info(f"Search time for {emb_type} embeddings: {search_duration*1000:.2f} ms")
+
                             cols = st.columns(k)
                             for col, idx in zip(cols, I[0]):
                                 video_path = id_maps[emb_type].get(idx, None)
@@ -83,6 +93,7 @@ def main():
                                             col.write("Preview not available")
                                     else:
                                         col.write("Video not found")
+                    
                 else:
                     st.error("Not enough frames extracted from the video.")
 
@@ -150,10 +161,8 @@ def get_video_gif(video_path, n_frames=10, output_size=(224,224)):
     return gif_bytes
 
 def get_video_embeddings_all(frames, model, processor, device):
-    # Prepare frames as a tensor: (1, num_frames, 3, H, W)
     frames_tensor = torch.tensor(np.array(frames)).permute(0,3,1,2).unsqueeze(0).to(device).float() / 255.0
 
-    # Normalize with processor if available
     pixel_mean = torch.tensor(processor.image_mean).view(1,3,1,1).to(device)
     pixel_std = torch.tensor(processor.image_std).view(1,3,1,1).to(device)
     frames_tensor = (frames_tensor - pixel_mean) / pixel_std
@@ -161,7 +170,7 @@ def get_video_embeddings_all(frames, model, processor, device):
     with torch.no_grad():
         outputs = model(frames_tensor)
 
-    features = outputs.last_hidden_state  # [1, seq_len, hidden_dim]
+    features = outputs.last_hidden_state  
 
     mean_pool = features.mean(dim=1).squeeze(0).cpu().numpy()
     max_pool = features.max(dim=1).values.squeeze(0).cpu().numpy()
