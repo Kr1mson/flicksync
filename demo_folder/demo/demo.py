@@ -19,19 +19,19 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 @st.cache_resource
 def load_timesformer():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400").to(device).eval()
-    processor = AutoImageProcessor.from_pretrained("facebook/timesformer-base-finetuned-k400")  # <-- use matching processor
+    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400",trust_remote_code=True, 
+    use_safetensors=True).to(device).eval()
+    processor = AutoImageProcessor.from_pretrained("facebook/timesformer-base-finetuned-k400") 
     return model, processor, device
 
 def main():
     st.set_page_config(page_title="Video Similarity Search", layout="wide")
 
-    # Load FAISS indices and ID maps
     faiss_indices = {}
     id_maps = {}
     for emb_type in ["mean", "max", "cls"]:
-        faiss_indices[emb_type] = faiss.read_index(f"demo/video_embeddings_{emb_type}.index")
-        with open(f"demo/id_map_{emb_type}.pkl", "rb") as f:
+        faiss_indices[emb_type] = faiss.read_index(f"video_embeddings_{emb_type}.index")
+        with open(f"id_map_{emb_type}.pkl", "rb") as f:
             id_maps[emb_type] = pickle.load(f)
 
     model, processor, device = load_timesformer()
@@ -43,7 +43,7 @@ def main():
 
     if uploaded_file is not None:
         file_ext = uploaded_file.name.split(".")[-1]
-        temp_path = f"demo/temp_video.{file_ext}"
+        temp_path = f"temp_video.{file_ext}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
@@ -61,7 +61,6 @@ def main():
 
                     embs = get_video_embeddings_all(frames, model, processor, device)
 
-                    # Normalize embeddings
                     for key in embs:
                         embs[key] = embs[key] / np.linalg.norm(embs[key])
 
@@ -76,7 +75,7 @@ def main():
                                 video_path =id_maps[emb_type].get(idx, None)
                                 with col:
                                     if video_path:
-                                        demo_path = video_path.replace("Dataset", "demo")
+                                        demo_path = video_path.replace("Dataset/", "")
                                         gif_bytes = get_video_gif(demo_path)
                                         if gif_bytes is not None:
                                             col.image(gif_bytes, use_container_width=True)
@@ -151,10 +150,8 @@ def get_video_gif(video_path, n_frames=10, output_size=(224,224)):
     return gif_bytes
 
 def get_video_embeddings_all(frames, model, processor, device):
-    # Prepare frames as a tensor: (1, num_frames, 3, H, W)
     frames_tensor = torch.tensor(np.array(frames)).permute(0,3,1,2).unsqueeze(0).to(device).float() / 255.0
 
-    # Normalize with processor if available
     pixel_mean = torch.tensor(processor.image_mean).view(1,3,1,1).to(device)
     pixel_std = torch.tensor(processor.image_std).view(1,3,1,1).to(device)
     frames_tensor = (frames_tensor - pixel_mean) / pixel_std
@@ -162,7 +159,7 @@ def get_video_embeddings_all(frames, model, processor, device):
     with torch.no_grad():
         outputs = model(frames_tensor)
 
-    features = outputs.last_hidden_state  # [1, seq_len, hidden_dim]
+    features = outputs.last_hidden_state  
 
     mean_pool = features.mean(dim=1).squeeze(0).cpu().numpy()
     max_pool = features.max(dim=1).values.squeeze(0).cpu().numpy()

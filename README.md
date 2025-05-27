@@ -38,7 +38,9 @@ team-name/
 ```
 
 ---
+
 ## 📂 Dataset
+
 - The system uses the [UCF101](https://www.crcv.ucf.edu/research/data-sets/ucf101/) action recognition dataset, which contains 13,320 videos across 101 action categories.
 
 - The embedder.ipynb notebook (inside src/) supports generating Timesformer embeddings for all 101 classes, enabling full-scale similarity search.
@@ -46,8 +48,11 @@ team-name/
 - For a quick test and faster demo experience, a precomputed FAISS index (based on only the first 20 classes) is included in the demo_folder/demo_embeddings/ directory.
 
 - This allows the app to run immediately without requiring full dataset processing.
+
 ---
+
 ## 🛠️ Getting Started
+
 **Requirements:**
 
 - Python 3.8+
@@ -59,13 +64,16 @@ team-name/
 
 1. Clone the repository.
 2. Install dependencies:
+
 ```bash
 pip install requirements.txt
 ```
+
 4. Open `embedder.ipynb` to generate embeddings for the videos.
 5. Use `frontend.py` to search for similar videos and compare the different pooling strategies.
 
 ---
+
 ## 🧠 Models
 
 - Timesformer (default, Hugging Face)
@@ -83,7 +91,9 @@ pip install requirements.txt
 - Run demo.py in demo_src
 
 - Download the UCF101 dataset and utilise any of the first 20 classes for demo testing
+
 ---
+
 ## 📊 Results
 
 - Retrieves and displays the top-k most similar videos to a given query using transformer-based embeddings and FAISS.

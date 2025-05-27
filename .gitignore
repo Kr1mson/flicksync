@@ -1,2 +1,6 @@
 venv/
 UCF101/
+train/
+test/
+demo_venv/
+train_subset/
