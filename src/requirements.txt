@@ -9,3 +9,8 @@ opencv-python
 streamlit
 imageio
 av
+easydict
+timm
+seaborn
+scikit-learn
+umap
