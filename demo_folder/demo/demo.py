@@ -8,112 +8,72 @@ import pickle
 import numpy as np
 import cv2
 import torch
-from transformers import TimesformerModel, AutoImageProcessor
+from transformers import TimesformerModel, TimesformerConfig
 import imageio
+import time
+from torchvision import transforms
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @st.cache_resource
 def load_timesformer():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400",trust_remote_code=True, 
-    use_safetensors=True).to(device).eval()
-    processor = AutoImageProcessor.from_pretrained("facebook/timesformer-base-finetuned-k400") 
-    return model, processor, device
-
-def main():
-    st.set_page_config(page_title="Video Similarity Search", layout="wide")
-
-    faiss_indices = {}
-    id_maps = {}
-    for emb_type in ["mean", "max", "cls"]:
-        faiss_indices[emb_type] = faiss.read_index(f"video_embeddings_{emb_type}.index")
-        with open(f"id_map_{emb_type}.pkl", "rb") as f:
-            id_maps[emb_type] = pickle.load(f)
-
-    model, processor, device = load_timesformer()
-
-    st.title("Video Similarity Search")
-    st.write("Upload a video to find similar content")
-
-    uploaded_file = st.file_uploader("Choose a video...", type=["mp4", "avi", "mov"])
-
-    if uploaded_file is not None:
-        file_ext = uploaded_file.name.split(".")[-1]
-        temp_path = f"temp_video.{file_ext}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        if st.button("Find Similar Videos"):
-            with st.spinner("Processing video..."):
-                frames = sample_frames(temp_path)
-                gif_bytes = get_video_gif(temp_path)
-
-                if frames and len(frames) >= 8:
-                    st.subheader("Uploaded Video Preview")
-                    if gif_bytes is not None:
-                        st.image(gif_bytes, width=300)
-                    else:
-                        st.write("Preview not available")
-
-                    embs = get_video_embeddings_all(frames, model, processor, device)
-
-                    for key in embs:
-                        embs[key] = embs[key] / np.linalg.norm(embs[key])
-
-                    k = 5
-                    tabs = st.tabs(["Mean Pooling", "Max Pooling", "CLS Token"])
-                    for tab, emb_type in zip(tabs, ["mean", "max", "cls"]):
-                        with tab:
-                            st.write(f"Results for {emb_type} embeddings:")
-                            D, I = faiss_indices[emb_type].search(np.expand_dims(embs[emb_type], axis=0), k)
-                            cols = st.columns(k)
-                            for col, idx in zip(cols, I[0]):
-                                video_path =id_maps[emb_type].get(idx, None)
-                                with col:
-                                    if video_path:
-                                        demo_path = video_path.replace("Dataset/", "")
-                                        gif_bytes = get_video_gif(demo_path)
-                                        if gif_bytes is not None:
-                                            col.image(gif_bytes, use_container_width=True)
-                                        else:
-                                            col.write(f"{demo_path} not found")
-                                    else:
-                                        col.write("Video not found")
-                else:
-                    st.error("Not enough frames extracted from the video.")
-
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-def sample_frames(video_path, n_frames=16, output_size=(224,224)):
-    frames = []
+    
+    config = TimesformerConfig.from_pretrained("facebook/timesformer-base-finetuned-k400")
+    model = TimesformerModel.from_pretrained(
+        "facebook/timesformer-base-finetuned-k400",
+        trust_remote_code=True,
+        use_safetensors=True).to(device)
+    
+    return model
+def sample_frames(video_path, num_frames=8):
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        st.error("Error opening video file.")
-        return frames
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    if total_frames < num_frames:
+        raise ValueError(f"Video too short: {total_frames} < {num_frames}")
 
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if frame_count == 0:
-        st.error("Video has no frames.")
-        return frames
+    frame_indices = set()
+    attempts = 0
+    while len(frame_indices) < num_frames and attempts < 3:
+        offsets = np.linspace(0, total_frames-1, num_frames-len(frame_indices))
+        frame_indices.update(int(round(o)) for o in offsets)
+        attempts += 1
 
-    frame_idxs = list(map(int, np.linspace(0, frame_count - 1, n_frames)))
-    idx = 0
-    while cap.isOpened() and len(frames) < n_frames:
+    frames = []
+    for idx in sorted(frame_indices):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
-        if not ret:
-            break
-        if idx in frame_idxs:
-            frame = cv2.resize(frame, output_size)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(frame)
-        idx += 1
+        if ret:
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    
     cap.release()
-    return frames
+    
+    if len(frames) < num_frames:
+        last_frame = frames[-1]
+        frames += [last_frame] * (num_frames - len(frames))
+
+    video_tensor = torch.tensor(np.array(frames), dtype=torch.float32).permute(0, 3, 1, 2)
+    video_tensor /= 255.0
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                           std=[0.229, 0.224, 0.225])
+    ])
+    
+    return transform(video_tensor)
+
+
+
+def extract_embedding(video_tensor,model,device):
+    inputs = video_tensor.unsqueeze(0).to(device)  # [1, T, C, H, W]
+    with torch.no_grad():
+        outputs = model(inputs)
+        cls_embedding = outputs.last_hidden_state[:, 0]
+    return cls_embedding.cpu().numpy()
 
 def get_video_gif(video_path, n_frames=10, output_size=(224,224)):
     cap = cv2.VideoCapture(video_path)
@@ -149,27 +109,77 @@ def get_video_gif(video_path, n_frames=10, output_size=(224,224)):
     gif_bytes.seek(0)
     return gif_bytes
 
-def get_video_embeddings_all(frames, model, processor, device):
-    frames_tensor = torch.tensor(np.array(frames)).permute(0,3,1,2).unsqueeze(0).to(device).float() / 255.0
+def main():
+    st.set_page_config(page_title="Video Similarity Search", layout="wide")
 
-    pixel_mean = torch.tensor(processor.image_mean).view(1,3,1,1).to(device)
-    pixel_std = torch.tensor(processor.image_std).view(1,3,1,1).to(device)
-    frames_tensor = (frames_tensor - pixel_mean) / pixel_std
+    
+    
+    faiss_index = faiss.read_index(f"embeddings/faiss_ucf101.index")
+    with open(f"embeddings/embedding_map.pkl", "rb") as f:
+        id_map= pickle.load(f)
 
-    with torch.no_grad():
-        outputs = model(frames_tensor)
+    model = load_timesformer()
 
-    features = outputs.last_hidden_state  
+    st.title("Video Similarity Search")
+    st.write("Upload a video to find similar content")
 
-    mean_pool = features.mean(dim=1).squeeze(0).cpu().numpy()
-    max_pool = features.max(dim=1).values.squeeze(0).cpu().numpy()
-    cls_token = features[:, 0, :].squeeze(0).cpu().numpy()
+    uploaded_file = st.file_uploader("Choose a video...", type=["mp4", "avi", "mov"])
 
-    return {
-        "mean": mean_pool,
-        "max": max_pool,
-        "cls": cls_token
-    }
+    if uploaded_file is not None:
+        file_ext = uploaded_file.name.split(".")[-1]
+        temp_path = f"temp_video.{file_ext}"
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        if st.button("Find Similar Videos"):
+            with st.spinner("Processing video..."):
+                frames = sample_frames(temp_path)
+                gif_bytes = get_video_gif(temp_path)
+
+                if len(frames)>=8:
+                    st.subheader("Uploaded Video Preview")
+                    if gif_bytes is not None:
+                        st.image(gif_bytes, width=300)
+                    else:
+                        st.write("Preview not available")
+
+                    start_emb_time = time.time()
+                    embs = extract_embedding(frames, model, device)
+                    end_emb_time = time.time()
+                    embedding_duration = end_emb_time - start_emb_time
+                    st.success(f"Embedding extraction time: {embedding_duration:.2f} seconds")
+
+                    k = 5
+                    
+                    
+                    st.write(f"Results for CLS embeddings:")
+                    start_search_time = time.perf_counter()
+                    D, I = faiss_index.search(embs, k)
+                    end_search_time = time.perf_counter()
+                    search_duration = end_search_time - start_search_time
+                    st.info(f"Search time for CLS embeddings: {search_duration*1000:.2f} ms")
+
+                    cols = st.columns(k)
+                    for col, idx in zip(cols, I[0]):
+                        video_path = id_map.get(idx, None)
+                        with col:
+                            if video_path:
+                                gif_bytes = get_video_gif(video_path)
+                                if gif_bytes is not None:
+                                    col.image(gif_bytes, use_container_width=True)
+                                    st.write(f"video_path: {video_path}")
+                                else:
+                                    col.write("Preview not available")
+                            else:
+                                col.write("Video not found")
+                    
+                else:
+                    st.error("Not enough frames extracted from the video.")
+
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
 
 if __name__ == "__main__":
     main()

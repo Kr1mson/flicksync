@@ -9,3 +9,6 @@ opencv-python
 streamlit
 imageio
 av
+easydict
+timm
+
