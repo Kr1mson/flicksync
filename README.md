@@ -44,7 +44,7 @@ team-name/
 
 - The embedder.ipynb notebook (inside src/) supports generating Timesformer embeddings for all 101 classes, enabling full-scale similarity search.
 
-- For a quick test and faster demo experience, a precomputed FAISS index (based on only the first 20 classes) is included in the demo_folder/demo_embeddings/ directory.
+- For a quick test and faster demo experience, a precomputed FAISS index is included in the demo_folder/embeddings/ directory.
 
 - This allows the app to run immediately without requiring full dataset processing.
 
@@ -89,7 +89,7 @@ pip install requirements.txt
 
 - Run demo.py in demo_src
 
-- Download the UCF101 dataset and utilise any of the first 20 classes for demo testing
+- Download the UCF101 dataset and utilise any of the classes for demo testing
 
 ---
 
