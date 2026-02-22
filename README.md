@@ -15,29 +15,6 @@ This project implements a **video similarity search system** using the [Timesfor
 
 ---
 
-## 🗂️ Project Structure
-
-```
-team-name/
-├── README.md
-├── Project_Requirements_doc.md
-├── src/
-|   ├── embedder.ipynb # Notebook for embedding generation & FAISS indexing
-|   └── frontend.py # Streamlit frontend app
-├── docs/
-│   ├── architecture_diagram.png
-│   └── tech_stack.md
-├── demo_folder/
-|   ├── demo/
-|   │   ├── demo_embeddings/ # demo embeddings generated on first 20 classes of UCF101
-|   |   ├── demo_data_subsets/
-|   │   └── demo.py
-│   └── screenshots/
-└── team_info.doc
-```
-
----
-
 ## 📂 Dataset
 
 - The system uses the [UCF101](https://www.crcv.ucf.edu/research/data-sets/ucf101/) action recognition dataset, which contains 13,320 videos across 101 action categories.
@@ -68,9 +45,11 @@ team-name/
 pip install requirements.txt
 ```
 
-4. Open `embedder.ipynb` to generate embeddings for the videos.
+4. Run `embedder.ipynb` to generate embeddings for the videos.
 5. Use `frontend.py` to search for similar videos and compare the different pooling strategies.
-
+```python
+streamlit run frontent.py
+```
 ---
 
 ## 🧠 Models
@@ -83,15 +62,6 @@ pip install requirements.txt
 
 ---
 
-## 🚀 Demo Setup
-
-- Install all libraries using requirements.txt
-
-- Run demo.py in demo_src
-
-- Download the UCF101 dataset and utilise any of the classes for demo testing
-
----
 
 ## 📊 Results
 

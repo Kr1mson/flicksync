@@ -1,6 +1,4 @@
-venv/
 UCF101/
-train/
-test/
-demo_venv/
-train_subset/
+__pycache__/
+.vscode/
+embeddings/
