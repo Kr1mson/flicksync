@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>FlickSync | Video Similarity Search</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "surface-container": "#171f33",
+          "surface-container-low": "#131b2e",
+          "surface-container-high": "#222a3d",
+          "surface-container-highest": "#2d3449",
+          "surface-container-lowest": "#060e20",
+          "on-surface": "#dae2fd",
+          "on-surface-variant": "#bbc9cd",
+          "primary-container": "#22d3ee",
+          "secondary-container": "#571bc1",
+          "on-secondary-container": "#c4abff",
+          "on-primary-container": "#005763",
+          "primary": "#8aebff",
+          "secondary": "#d0bcff",
+          "tertiary": "#ffd0e3",
+          "outline": "#859397",
+          "outline-variant": "#3c494c",
+          "surface": "#0b1326",
+          "surface-variant": "#2d3449",
+          "background": "#0b1326",
+          "on-background": "#dae2fd",
+          "on-primary": "#00363e",
+          "error": "#ffb4ab",
+          "primary-fixed": "#a2eeff",
+          "primary-fixed-dim": "#2fd9f4",
+          "surface-tint": "#2fd9f4",
+        },
+        borderRadius: {
+          DEFAULT: "0.125rem",
+          lg: "0.25rem",
+          xl: "0.5rem",
+          full: "0.75rem",
+        },
+        spacing: {
+          xs: "8px", sm: "16px", md: "24px", lg: "32px",
+          xl: "48px", gutter: "24px", "container-max": "1440px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-lg": ["Inter"],
+          "body-lg": ["Inter"], "title-md": ["Inter"],
+          "body-sm": ["Inter"], "label-caps": ["Geist"], "code-mono": ["Geist"],
+        },
+        fontSize: {
+          "display-lg": ["48px",{"lineHeight":"56px","letterSpacing":"-0.02em","fontWeight":"700"}],
+          "headline-lg": ["32px",{"lineHeight":"40px","letterSpacing":"-0.01em","fontWeight":"600"}],
+          "body-lg": ["16px",{"lineHeight":"24px","fontWeight":"400"}],
+          "title-md": ["20px",{"lineHeight":"28px","fontWeight":"500"}],
+          "body-sm": ["14px",{"lineHeight":"20px","fontWeight":"400"}],
+          "label-caps": ["12px",{"lineHeight":"16px","letterSpacing":"0.05em","fontWeight":"600"}],
+          "code-mono": ["13px",{"lineHeight":"18px","fontWeight":"400"}],
+        },
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    background-color: #0b1326;
+    color: #dae2fd;
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .glass-panel {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+  }
+  .scan-line {
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+    position: absolute;
+    top: -2px;
+    left: 0;
+    animation: scan 3s linear infinite;
+  }
+  @keyframes scan {
+    0%   { top: 0%;   opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+  .glow-button:hover { box-shadow: 0 0 15px rgba(34,211,238,0.4); }
+
+  /* k-slider thumb */
+  .custom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    background: #22D3EE;
+    cursor: pointer;
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(34,211,238,0.5);
+  }
+  .custom-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: #22D3EE;
+    cursor: pointer;
+    border-radius: 2px;
+    border: none;
+    box-shadow: 0 0 8px rgba(34,211,238,0.5);
+  }
+
+  /* Drop zone active state */
+  #drop-zone.drag-active {
+    border-color: #8aebff;
+    background: rgba(34,211,238,0.05);
+  }
+  #drop-zone.drag-active .scan-line { animation-duration: 1s; }
+
+  /* Loading spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { animation: spin 1s linear infinite; }
+
+  /* Progress bar */
+  @keyframes progress-indeterminate {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .progress-indeterminate { animation: progress-indeterminate 1.4s ease-in-out infinite; }
+
+  /* File selected state */
+  #file-info { display: none; }
+  #file-info.visible { display: flex; }
+</style>
+</head>
+<body class="bg-background text-on-background">
+
+<!-- Hidden file input -->
+<input type="file" id="file-input" accept=".mp4,.mov,.avi,.mkv" class="hidden">
+
+<!-- Top Nav -->
+<header class="fixed top-0 w-full z-50 bg-surface-container-low border-b border-outline-variant shadow-sm flex justify-between items-center h-16 px-gutter">
+  <div class="flex items-center gap-xl">
+    <span class="font-display-lg text-display-lg font-bold text-primary tracking-tighter">FlickSync</span>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="pt-16 min-h-screen relative overflow-hidden">
+  <div class="relative z-10 p-xl max-w-container-max mx-auto">
+
+    <!-- Hero Header -->
+    <div class="mb-xl text-center md:text-left">
+      <div class="inline-flex items-center gap-xs px-sm py-base bg-secondary-container/20 border border-secondary-container/40 rounded-full mb-md">
+        <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+        <span class="font-label-caps text-label-caps text-primary uppercase">TimeSformer · FAISS · UCF-101</span>
+      </div>
+      <h1 class="font-display-lg text-display-lg text-on-background mb-sm">Video Similarity Search</h1>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+        Upload a video to find the most similar clips in the indexed dataset using deep temporal embeddings and fast vector search.
+      </p>
+    </div>
+
+    <!-- Bento Grid -->
+    <div class="grid grid-cols-12 gap-lg">
+
+      <!-- Upload Zone (left, 8 cols) -->
+      <section class="col-span-12 lg:col-span-8">
+        <div class="glass-panel relative rounded-xl border-2 border-dashed border-outline-variant p-xl flex flex-col items-center justify-center min-h-[440px] group transition-all cursor-pointer"
+             id="drop-zone">
+          <div class="scan-line"></div>
+
+          <!-- Default state -->
+          <div id="upload-idle" class="flex flex-col items-center w-full">
+            <div class="w-24 h-24 mb-lg rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant group-hover:scale-110 transition-transform duration-500">
+              <span class="material-symbols-outlined text-primary text-5xl">upload_file</span>
+            </div>
+            <h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Drop video to analyze</h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant mb-lg text-center max-w-sm">
+              Drag and drop your video file here, or browse your local directory to find similar videos.
+            </p>
+            <div class="flex gap-md">
+              <button id="select-file-btn" class="glow-button bg-primary-container text-on-primary-container px-xl py-md rounded-lg font-title-md text-title-md transition-all hover:brightness-110 active:scale-95">
+                Select File
+              </button>
+              <button id="input-url-btn" class="bg-surface-container-highest border border-outline-variant text-on-surface px-xl py-md rounded-lg font-title-md text-title-md hover:bg-surface-container-high transition-all active:scale-95">
+                Enter Path
+              </button>
+            </div>
+            <div class="mt-xl flex gap-lg text-outline font-code-mono text-code-mono uppercase tracking-wider">
+              <span class="flex items-center gap-xs"><span class="material-symbols-outlined text-sm">check_circle</span> MP4 / MOV / AVI / MKV</span>
+              <span class="flex items-center gap-xs"><span class="material-symbols-outlined text-sm">check_circle</span> UP TO 2GB</span>
+            </div>
+          </div>
+
+          <!-- File selected state -->
+          <div id="file-info" class="flex-col items-center w-full">
+            <div id="file-preview-wrap" class="hidden w-48 aspect-video rounded-lg overflow-hidden border border-outline-variant bg-black mb-md">
+                <video id="file-preview"
+                    class="w-full h-full object-cover"
+                    autoplay
+                    loop
+                    muted
+                    playsinline>
+                </video>
+            </div>
+            <div class="w-20 h-20 mb-md rounded-full bg-primary/10 border border-primary/40 flex items-center justify-center">
+                <span class="material-symbols-outlined text-primary text-4xl">video_file</span>
+            </div>
+            <h2 id="file-name" class="font-code-mono text-code-mono text-primary mb-xs text-center truncate max-w-xs"></h2>
+            <p id="file-meta" class="font-body-sm text-body-sm text-on-surface-variant mb-lg"></p>
+            <div class="flex gap-md">
+              <button id="run-btn" class="glow-button bg-primary text-on-primary px-xl py-md rounded-lg font-title-md text-title-md transition-all hover:brightness-110 active:scale-95 flex items-center gap-xs">
+                <span class="material-symbols-outlined">database_search</span>
+                Run Search
+              </button>
+              <button id="clear-btn" class="bg-surface-container-highest border border-outline-variant text-on-surface px-xl py-md rounded-lg font-title-md text-title-md hover:bg-surface-container-high transition-all active:scale-95">
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <!-- URL input state -->
+          <div id="url-input-state" class="hidden flex-col items-center w-full max-w-lg">
+            <div class="w-20 h-20 mb-md rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant">
+              <span class="material-symbols-outlined text-primary text-4xl">link</span>
+            </div>
+            <h2 class="font-headline-lg text-headline-lg text-on-surface mb-sm">Enter local video path</h2>
+            <div class="w-full flex gap-md mb-md">
+              <input id="url-input" type="text"
+                class="flex-1 bg-surface-container border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary rounded-lg px-sm py-md font-code-mono text-code-mono text-on-surface placeholder:text-outline outline-none transition-all"
+                placeholder="/path/to/video.mp4">
+            </div>
+            <div class="flex gap-md">
+              <button id="url-run-btn" class="glow-button bg-primary text-on-primary px-xl py-md rounded-lg font-title-md text-title-md transition-all hover:brightness-110 active:scale-95 flex items-center gap-xs">
+                <span class="material-symbols-outlined">database_search</span>
+                Run Search
+              </button>
+              <button id="url-cancel-btn" class="bg-surface-container-highest border border-outline-variant text-on-surface px-xl py-md rounded-lg font-title-md text-title-md hover:bg-surface-container-high transition-all active:scale-95">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading state -->
+          <div id="loading-state" class="hidden flex-col items-center w-full">
+            <div class="w-20 h-20 mb-md rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <svg class="spinner w-10 h-10 text-primary" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="31.4" stroke-dashoffset="10" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Analyzing…</h2>
+            <p id="loading-msg" class="font-body-sm text-body-sm text-on-surface-variant mb-lg">Extracting temporal embeddings</p>
+            <div class="w-full max-w-xs h-1 bg-surface-container-highest rounded-full overflow-hidden">
+              <div class="h-full w-1/3 bg-primary rounded-full progress-indeterminate"></div>
+            </div>
+          </div>
+
+          <!-- Error state -->
+          <div id="error-state" class="hidden flex-col items-center w-full">
+            <div class="w-20 h-20 mb-md rounded-full bg-error/10 border border-error/30 flex items-center justify-center">
+              <span class="material-symbols-outlined text-error text-4xl">error_outline</span>
+            </div>
+            <h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Search failed</h2>
+            <p id="error-msg" class="font-body-sm text-body-sm text-error mb-lg text-center max-w-sm"></p>
+            <button id="error-retry-btn" class="bg-surface-container-highest border border-outline-variant text-on-surface px-xl py-md rounded-lg font-title-md text-title-md hover:bg-surface-container-high transition-all active:scale-95">
+              Try Again
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Right Sidebar (4 cols) -->
+      <aside class="col-span-12 lg:col-span-4 flex flex-col gap-lg">
+
+    
+        <!-- Search Parameters panel (k-slider from page 2) -->
+        <div class="glass-panel rounded-xl p-lg flex flex-col">
+          <h3 class="font-label-caps text-label-caps text-on-surface-variant mb-md flex items-center gap-xs">
+            <span class="material-symbols-outlined text-sm">tune</span>
+            SEARCH PARAMETERS
+          </h3>
+
+          <!-- Neighbors k -->
+          <div class="flex flex-col gap-md mb-lg">
+            <div class="flex items-center justify-between">
+              <label class="font-body-sm text-body-sm text-on-surface-variant" for="k-slider">Neighbors (k)</label>
+              <input id="k-number"
+                class="bg-surface border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary w-16 text-center py-1 rounded font-code-mono text-code-mono text-primary transition-all outline-none"
+                type="number" min="1" max="100" value="5">
+            </div>
+            <input id="k-slider"
+              class="w-full h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer custom-slider"
+              type="range" min="1" max="100" value="5">
+            <div class="flex justify-between text-code-mono font-code-mono" style="font-size:10px; color:#859397;">
+              <span>SPARSE (1)</span>
+              <span>DENSE (100)</span>
+            </div>
+            <p class="font-body-sm text-on-surface-variant leading-relaxed" style="font-size:12px;">
+              Number of nearest neighbors to retrieve from the vector database.
+            </p>
+          </div>        
+        </div>
+
+        <!-- Index info -->
+        <div class="glass-panel rounded-xl p-lg">
+          <h3 class="font-label-caps text-label-caps text-on-surface-variant mb-md flex items-center gap-xs">
+            <span class="material-symbols-outlined text-sm">database</span>
+            INDEX STATUS
+          </h3>
+          <div class="space-y-sm">
+            <div class="flex justify-between font-code-mono text-code-mono">
+              <span class="text-outline">Vectors</span>
+              <span id="index-size" class="text-primary">—</span>
+            </div>
+            <div class="flex justify-between font-code-mono text-code-mono">
+              <span class="text-outline">Device</span>
+              <span id="index-device" class="text-on-surface">—</span>
+            </div>
+            <div class="flex justify-between font-code-mono text-code-mono">
+              <span class="text-outline">Status</span>
+              <span id="index-status" class="text-outline">checking…</span>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+    </div><!-- /grid -->
+  </div>
+</main>
+
+<script>
+  /* ── State ── */
+  let selectedFile = null;
+  let currentMode = 'idle'; // idle | file | url | loading | error
+
+  const states = ['upload-idle','file-info','url-input-state','loading-state','error-state'];
+
+  function showState(id) {
+    states.forEach(s => {
+      const el = document.getElementById(s);
+      if (el) {
+        el.style.display = (s === id) ? 'flex' : 'none';
+      }
+    });
+    currentMode = id;
+  }
+
+  /* ── k slider sync ── */
+  const kSlider = document.getElementById('k-slider');
+  const kNumber = document.getElementById('k-number');
+  kSlider.addEventListener('input', e => { kNumber.value = e.target.value; });
+  kNumber.addEventListener('input', e => {
+    let v = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
+    kSlider.value = v;
+    kNumber.value = v;
+  });
+
+  /* ── Drop zone drag/drop ── */
+  const dropZone = document.getElementById('drop-zone');
+  ['dragenter','dragover','dragleave','drop'].forEach(ev =>
+    dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }));
+
+  ['dragenter','dragover'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.add('drag-active')));
+
+  ['dragleave','drop'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.remove('drag-active')));
+
+  dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelected(file);
+  });
+
+  /* ── File input ── */
+  const fileInput = document.getElementById('file-input');
+  document.getElementById('select-file-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) handleFileSelected(e.target.files[0]);
+  });
+
+  /* ── URL flow ── */
+  document.getElementById('input-url-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    showState('url-input-state');
+  });
+  document.getElementById('url-cancel-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    showState('upload-idle');
+  });
+  document.getElementById('url-run-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    const path = document.getElementById('url-input').value.trim();
+    if (!path) {
+      document.getElementById('url-input').focus();
+      return;
+    }
+    runSearch(path);
+  });
+
+  /* ── File selected helpers ── */
+  function handleFileSelected(file) {
+    selectedFile = file;
+    document.getElementById('file-name').textContent = file.name;
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    document.getElementById('file-meta').textContent = `${mb} MB · ready to analyze`;
+
+    // Revoke previous preview URL if any
+    const existing = document.getElementById('file-preview');
+    if (existing && existing.src) URL.revokeObjectURL(existing.src);
+
+    const url = URL.createObjectURL(file);
+    document.getElementById('file-preview').src = url;
+    document.getElementById('file-preview-wrap').classList.remove('hidden');
+
+    showState('file-info');
+  }
+
+  document.getElementById('clear-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      selectedFile = null;
+      fileInput.value = '';
+      const preview = document.getElementById('file-preview');
+      if (preview.src) URL.revokeObjectURL(preview.src);
+      preview.src = '';
+      document.getElementById('file-preview-wrap').classList.add('hidden');
+      showState('upload-idle');
+  });
+  document.getElementById('run-btn').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!selectedFile) return;
+    const k = parseInt(kNumber.value);
+    showState('loading-state');
+
+    const messages = [
+        'Extracting temporal embeddings…',
+        'Querying FAISS index…',
+        'Ranking similarity vectors…',
+    ];
+    let msgIdx = 0;
+    const msgEl = document.getElementById('loading-msg');
+    const msgTimer = setInterval(() => {
+        msgIdx = (msgIdx + 1) % messages.length;
+        msgEl.textContent = messages[msgIdx];
+    }, 1400);
+
+    try {
+        const form = new FormData();
+        form.append('file', selectedFile);
+        form.append('k', k);
+        const res = await fetch('http://localhost:5000/api/search', {
+            method: 'POST',
+            body: form,
+        });
+        clearInterval(msgTimer);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        sessionStorage.setItem('searchResults', JSON.stringify(data));
+        window.location.href = 'results.html';
+    } catch (err) {
+        clearInterval(msgTimer);
+        document.getElementById('error-msg').textContent = err.message;
+        showState('error-state');
+    }
+});
+
+  /* ── Error retry ── */
+  document.getElementById('error-retry-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    showState('upload-idle');
+  });
+
+  /* ── Run search ── */
+  async function runSearch(path) {
+    const k = parseInt(kNumber.value);
+    showState('loading-state');
+
+    const messages = [
+      'Extracting temporal embeddings…',
+      'Querying FAISS index…',
+      'Ranking similarity vectors…',
+    ];
+    let msgIdx = 0;
+    const msgEl = document.getElementById('loading-msg');
+    const msgTimer = setInterval(() => {
+      msgIdx = (msgIdx + 1) % messages.length;
+      msgEl.textContent = messages[msgIdx];
+    }, 1400);
+
+    try {
+      // const res = await fetch('/api/search', {
+      const res = await fetch('http://localhost:5000/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, k }),
+      });
+      clearInterval(msgTimer);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      // Store results and redirect
+      sessionStorage.setItem('searchResults', JSON.stringify(data));
+      window.location.href = 'results.html';
+    } catch (err) {
+      clearInterval(msgTimer);
+      document.getElementById('error-msg').textContent = err.message;
+      showState('error-state');
+    }
+  }
+
+  /* ── Health check → index status ── */
+  async function checkHealth() {
+    try {
+      // const res = await fetch('/api/health');
+      const res = await fetch('http://localhost:5000/api/health');
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      document.getElementById('index-size').textContent =
+        data.index_size ? data.index_size.toLocaleString() : '—';
+      document.getElementById('index-device').textContent = data.device || '—';
+      document.getElementById('index-status').textContent = 'online';
+      document.getElementById('index-status').className = 'text-primary font-code-mono text-code-mono';
+    } catch {
+      document.getElementById('index-status').textContent = 'offline';
+      document.getElementById('index-status').className = 'text-error font-code-mono text-code-mono';
+    }
+  }
+
+  /* ── Init ── */
+  showState('upload-idle');
+  checkHealth();
+</script>
+</body>
+</html>

@@ -1,76 +1,173 @@
 # FlickSync
+## Reverse Video Search using TimeSformer & FAISS
 
-## Reverse Video Search using Timesformer & FAISS
-
-This project implements a **video similarity search system** using the [Timesformer](https://arxiv.org/abs/2102.05095) transformer model (pretrained on Kinetics-400) to generate video embeddings, and [FAISS](https://github.com/facebookresearch/faiss) for efficient nearest neighbor search. Users can upload a video, and the app will return visually similar videos from the UCF101 dataset using precomputed embedding indexes.
+FlickSync is a **video similarity search system** that uses the [TimeSformer](https://arxiv.org/abs/2102.05095) transformer model (pretrained on Kinetics-400) to generate deep temporal video embeddings, and [FAISS](https://github.com/facebookresearch/faiss) for fast nearest-neighbor retrieval. Upload any video and FlickSync returns the most visually similar clips from the UCF-101 dataset.
 
 ---
 
 ## ✨ Features
 
-- **Video Embedding:** Uses Timesformer to extract powerful video representations.
-- **Similarity Search:** Efficiently retrieves similar videos using FAISS vector search.
-- **Interactive Frontend:** Built with Streamlit for easy video upload and result visualization.
-- **GIF Previews:** Generates GIF previews for both uploaded and retrieved videos.
+- **Deep Video Embeddings** — TimeSformer CLS-token pooling captures rich temporal representations across frames.
+- **Fast Similarity Search** — FAISS L2-indexed, L2-normalized embeddings enable sub-millisecond retrieval at scale.
+- **Modern Web UI** — A two-page frontend (`index.html` + `results.html`) with drag-and-drop upload, GIF previews, similarity bars, and per-result inspection.
+- **REST API** — Flask backend exposes `/api/search`, `/api/health`, and `/api/thumbnail` endpoints.
+- **GIF Previews** — Animated previews generated server-side for both the query video and all retrieved results.
+- **Evaluation Notebook** — `evaluation.ipynb` measures Recall@1/3/5 and renders a t-SNE cluster visualization of the embedding space.
 
 ---
 
-## 📂 Dataset
+## 📂 Project Structure
 
-- The system uses the [UCF101](https://www.crcv.ucf.edu/research/data-sets/ucf101/) action recognition dataset, which contains 13,320 videos across 101 action categories.
+```
+flicksync/
+├── app.py                      # Flask API (search, health, thumbnail)
+├── Dockerfile                  # Docker container definition
+├── docker-compose.yml          # Container orchestration
+├── pyproject.tomlW              # Project metadata & dependencies
+├── uv.lock                     # Locked dependency versions
+├── .dockerignore
+├── .gitignore
+├── .python-version
+├── frontend/
+│   ├── index.html              # Upload page
+│   └── results.html            # Results page
+├── notebooks/
+│   └── evaluation.ipynb        # Recall@k evaluation & t-SNE visualization
+├── tests/
+│   └── smoke_test.py           # Basic sanity checks
+└── utility/
+    ├── __init__.py
+    ├── embedder.py             # Embedding generation utilities
+    └── video_processing.py     # Frame loading & TimeSformer extraction
+```
 
-- The embedder.ipynb notebook (inside src/) supports generating Timesformer embeddings for all 101 classes, enabling full-scale similarity search.
+---
 
-- For a quick test and faster demo experience, a precomputed FAISS index is included in the demo_folder/embeddings/ directory.
+## 📦 Dataset
 
-- This allows the app to run immediately without requiring full dataset processing.
+The system indexes the [UCF-101](https://www.crcv.ucf.edu/research/data-sets/ucf101/) action recognition dataset — 13,320 videos across 101 action categories.
 
 ---
 
 ## 🛠️ Getting Started
 
-**Requirements:**
+**Requirements**
 
 - Python 3.8+
-- Jupyter Notebook
-- PyTorch
-- `transformers`, `datasets`, `pandas`, `scikit-learn`, and other standard ML/NLP libraries
+- PyTorch (CPU or CUDA)
+- [uv](https://github.com/astral-sh/uv) for dependency management
+- UCF-101 dataset ([download here](https://www.crcv.ucf.edu/research/data-sets/ucf101/))
 
-**Setup:**
-
-1. Clone the repository.
-2. Install dependencies:
+**Installation**
 
 ```bash
-pip install requirements.txt
+git clone https://github.com/your-org/flicksync.git
+cd flicksync
+uv sync
 ```
 
-4. Run `embedder.ipynb` to generate embeddings for the videos.
-5. Use `frontend.py` to search for similar videos and compare the different pooling strategies.
-```python
-streamlit run frontent.py
+**Dataset setup**
+
+Download UCF-101 and place it in the project root so the structure matches:
 ```
+flicksync/
+└── UCF101/
+    ├── train/
+    ├── test/
+    └── val/
+```
+
+**Build the FAISS index** *(one-time setup)*
+
+Run the embedder to generate embeddings for all training videos and save the FAISS index:
+
+```bash
+uv run python utility/embedder.py
+```
+
+This will create `embeddings/faiss_ucf101.index` and `embeddings/embedding_map.pkl`. Depending on your hardware this takes a while — a GPU is strongly recommended.
+
+**Run the API**
+
+```bash
+uv run python app.py
+```
+
+The Flask server starts on `http://localhost:5000`.
+
+**Open the frontend**
+
+Open `frontend/index.html` directly in your browser. For local development the API calls are hardcoded to `http://localhost:5000`.
+
 ---
 
-## 🧠 Models
+## 🔌 API Reference
 
-- Timesformer (default, Hugging Face)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/search` | POST | Upload a video file (multipart) or send a JSON `{"path": "...", "k": 5}` to retrieve the top-k similar videos. |
+| `/api/health` | GET | Returns index status, vector count, and compute device. |
+| `/api/thumbnail` | GET | Streams an animated GIF preview for any indexed video path (`?path=...`). |
 
-- Easily extensible to other video transformer models
+**Search response fields:**
 
-- Leverages CLS pooling to generate contextually informed embeddings
+```json
+{
+  "query_path": "my_video.avi",
+  "query_gif_b64": "<base64 animated GIF>",
+  "k": 5,
+  "device": "cuda",
+  "embedding_time_ms": 843.2,
+  "search_time_ms": 0.18,
+  "results": [
+    {
+      "rank": 1,
+      "id": 412,
+      "distance": 0.21,
+      "similarity_score": 94.75,
+      "path": "UCF101/train/BalanceBeam/v_BalanceBeam_g01_c01.avi"
+    }
+  ]
+}
+```
 
 ---
 
+## 🧠 Model Details
 
-## 📊 Results
+| Property | Value |
+|---|---|
+| Model | `facebook/timesformer-base-finetuned-k400` |
+| Input frames | 8 uniformly sampled frames per video |
+| Frame size | 224 × 224 |
+| Embedding dim | 768 (CLS token) |
+| FAISS index | `IndexFlatIP` with L2 normalization (cosine similarity) |
 
-- Retrieves and displays the top-k most similar videos to a given query using transformer-based embeddings and FAISS.
+Embeddings are L2-normalized before indexing and before search, so FAISS inner-product scores correspond directly to cosine similarity.
 
-- Visual previews (GIFs) make it easy to assess retrieval quality.
+---
 
-- Achieves high retrieval accuracy, with combined recall@1: 0.9797, recall@3: 0.9737, and recall@5: 0.9564, indicating that the correct class is almost always among the top results.
+## 📊 Evaluation Results
 
-- Recall@k measures how often the correct item appears within the top-k retrieved results. A higher recall@k indicates better retrieval performance, meaning the system is more likely to present relevant results to the user quickly.
+Evaluated on a held-out subset of UCF-101 test videos:
 
-- The system is efficient and scalable, capable of handling large video datasets and real-time search scenarios by indexing normalized embeddings with FAISS.
+| Metric | Score |
+|---|---|
+| Recall@1 | 0.9797 |
+| Recall@3 | 0.9737 |
+| Recall@5 | 0.9564 |
+
+**Recall@k** measures how often the correct action class appears within the top-k retrieved results. A score of 0.98 at k=1 means the system returns the correct class as the top result ~98% of the time.
+
+The `evaluation.ipynb` notebook reproduces these numbers and renders a t-SNE plot showing how well TimeSformer embeddings separate the 101 action classes in 2D space.
+
+---
+
+## 🗺️ How It Works
+
+1. **Frame sampling** — 8 frames are uniformly sampled from each video.
+2. **Embedding** — Frames are passed through TimeSformer; the CLS token output (768-dim) is taken as the video representation.
+3. **Normalization** — Embeddings are L2-normalized so that FAISS inner-product search equals cosine similarity.
+4. **Indexing** — All training-set embeddings are stored in a FAISS `IndexFlatIP` index alongside a `{index_id → file_path}` map.
+5. **Query** — A query video goes through the same pipeline; FAISS returns the top-k nearest neighbors in under 1 ms.
+6. **Preview** — The backend generates animated GIF previews on the fly from the raw video files.

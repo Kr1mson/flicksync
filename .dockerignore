@@ -6,23 +6,23 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.eggs/
 
 # Virtual envs
 .venv/
 venv/
 env/
 
-# Data — too large for git, managed separately
+# Data — mount these as volumes, never bake into image
 embeddings/
 UCF101/
 
-# Model cache (HuggingFace downloads locally to here)
-.cache/
-
-# Secrets
-.env
-.env.*
-!.env.example
+# Dev/test artifacts
+*.ipynb
+*.ipynb_checkpoints/
+tests/
+.coverage
+htmlcov/
 
 # Editor
 .vscode/
@@ -34,5 +34,6 @@ UCF101/
 .DS_Store
 Thumbs.db
 
-# Docker
-*.log
+# Git
+.git/
+.gitignore

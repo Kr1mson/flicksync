@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>FlickSync | Search Results</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "surface-container": "#171f33",
+          "surface-container-low": "#131b2e",
+          "surface-container-high": "#222a3d",
+          "surface-container-highest": "#2d3449",
+          "surface-container-lowest": "#060e20",
+          "on-surface": "#dae2fd",
+          "on-surface-variant": "#bbc9cd",
+          "primary-container": "#22d3ee",
+          "secondary-container": "#571bc1",
+          "on-secondary-container": "#c4abff",
+          "on-primary-container": "#005763",
+          "primary": "#8aebff",
+          "secondary": "#d0bcff",
+          "tertiary": "#ffd0e3",
+          "outline": "#859397",
+          "outline-variant": "#3c494c",
+          "surface": "#0b1326",
+          "surface-variant": "#2d3449",
+          "background": "#0b1326",
+          "on-background": "#dae2fd",
+          "on-primary": "#00363e",
+          "error": "#ffb4ab",
+          "primary-fixed": "#a2eeff",
+          "primary-fixed-dim": "#2fd9f4",
+        },
+        borderRadius: {
+          DEFAULT: "0.125rem", lg: "0.25rem", xl: "0.5rem", full: "0.75rem",
+        },
+        spacing: {
+          xs: "8px", sm: "16px", md: "24px", lg: "32px",
+          xl: "48px", gutter: "24px", "container-max": "1440px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-lg": ["Inter"],
+          "body-lg": ["Inter"], "title-md": ["Inter"],
+          "headline-lg-mobile": ["Inter"], "body-sm": ["Inter"],
+          "label-caps": ["Geist"], "code-mono": ["Geist"],
+        },
+        fontSize: {
+          "display-lg": ["48px",{"lineHeight":"56px","letterSpacing":"-0.02em","fontWeight":"700"}],
+          "headline-lg": ["32px",{"lineHeight":"40px","letterSpacing":"-0.01em","fontWeight":"600"}],
+          "body-lg": ["16px",{"lineHeight":"24px","fontWeight":"400"}],
+          "title-md": ["20px",{"lineHeight":"28px","fontWeight":"500"}],
+          "headline-lg-mobile": ["24px",{"lineHeight":"32px","fontWeight":"600"}],
+          "body-sm": ["14px",{"lineHeight":"20px","fontWeight":"400"}],
+          "label-caps": ["12px",{"lineHeight":"16px","letterSpacing":"0.05em","fontWeight":"600"}],
+          "code-mono": ["13px",{"lineHeight":"18px","fontWeight":"400"}],
+        },
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    background-color: #0b1326;
+    color: #dae2fd;
+    -webkit-font-smoothing: antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: #0b1326; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #3c494c; border-radius: 10px; }
+
+  .video-card { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s; }
+  .video-card:hover {
+    border-color: rgba(138,235,255,0.4);
+    box-shadow: 0 8px 32px rgba(34,211,238,0.07);
+    transform: translateY(-2px);
+  }
+  .video-card:hover .play-overlay { opacity: 1; }
+  .play-overlay { opacity: 0; transition: opacity 0.2s; }
+
+  .scanning-animation { animation: spin 4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Similarity bar fill animation */
+  .sim-bar-fill { transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+
+  /* Stagger card entrance */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .card-enter { animation: fadeUp 0.35s ease both; }
+
+  /* Score badge colors */
+  .badge-high   { background: #22d3ee; color: #005763; }
+  .badge-mid    { background: #d0bcff; color: #23005c; }
+  .badge-low    { background: #2d3449; color: #bbc9cd; }
+
+  /* Rank number pill */
+  .rank-pill {
+    position: absolute; bottom: 8px; right: 8px;
+    padding: 2px 8px;
+    background: rgba(0,0,0,0.75);
+    border-radius: 4px;
+    font-family: 'Geist', monospace;
+    font-size: 12px;
+    color: #859397;
+  }
+
+  /* Empty/error state */
+  .empty-state { display: none; }
+  .empty-state.visible { display: flex; }
+</style>
+</head>
+<body class="overflow-hidden">
+
+<!-- Top Nav -->
+<header class="fixed top-0 w-full z-50 bg-surface-container-low border-b border-outline-variant shadow-sm flex justify-between items-center h-16 px-gutter">
+  <div class="flex items-center gap-xs">
+    <a href="index.html" class="font-display-lg text-display-lg font-bold text-primary tracking-tighter hover:opacity-80 transition-opacity">FlickSync</a>
+  </div>
+  <div class="flex items-center gap-md">
+    <a href="index.html"
+      class="flex items-center gap-xs font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors uppercase tracking-widest">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      New Search
+    </a>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="pt-16 h-screen overflow-y-auto custom-scrollbar bg-background">
+  <section class="p-gutter space-y-lg">
+
+    <!-- Header row -->
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-md border-b border-outline-variant pb-lg">
+      <div class="space-y-xs">
+        <div class="flex items-center gap-sm">
+          <span class="font-label-caps text-label-caps text-primary bg-primary/10 px-xs py-1 rounded">Search Results</span>
+          <span id="task-id" class="font-body-sm text-body-sm text-outline"></span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface">Similar Videos</h1>
+
+        <!-- Stat pills -->
+        <div class="flex flex-wrap gap-xs" id="stat-pills">
+          <div class="px-sm py-1 bg-surface-container-high border border-outline-variant rounded-full flex items-center gap-xs">
+            <span class="font-label-caps text-label-caps text-outline">Top-K:</span>
+            <span id="pill-k" class="font-label-caps text-label-caps text-primary">—</span>
+          </div>
+          <div class="px-sm py-1 bg-surface-container-high border border-outline-variant rounded-full flex items-center gap-xs">
+            <span class="font-label-caps text-label-caps text-outline">Embedding:</span>
+            <span id="pill-emb" class="font-label-caps text-label-caps text-on-surface">—</span>
+          </div>
+          <div class="px-sm py-1 bg-surface-container-high border border-outline-variant rounded-full flex items-center gap-xs">
+            <span class="font-label-caps text-label-caps text-outline">Search:</span>
+            <span id="pill-search" class="font-label-caps text-label-caps text-on-surface">—</span>
+          </div>
+          <div class="px-sm py-1 bg-surface-container-high border border-outline-variant rounded-full flex items-center gap-xs">
+            <span class="font-label-caps text-label-caps text-outline">Device:</span>
+            <span id="pill-device" class="font-label-caps text-label-caps text-on-surface">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Source thumbnail -->
+      <div class="bg-surface-container-high p-xs rounded-xl border border-outline-variant max-w-xs w-full relative overflow-hidden">
+        <div class="flex items-center gap-sm">
+          <div id="source-thumb" class="relative w-24 aspect-square rounded overflow-hidden bg-black shrink-0 border border-outline-variant flex items-center justify-center">              <span class="material-symbols-outlined text-outline text-2xl">video_file</span>
+          </div>
+          <div class="min-w-0">
+            <p class="font-label-caps text-label-caps text-primary uppercase">Source</p>
+            <p id="source-name" class="font-body-sm text-body-sm text-on-surface truncate max-w-[160px]">—</p>
+            <p id="source-meta" class="font-code-mono text-code-mono text-outline">—</p>
+          </div>
+        </div>
+        <div class="absolute top-0 right-0 p-2">
+          <div class="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary scanning-animation"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty / error state -->
+    <div id="empty-state" class="hidden flex-col items-center justify-center py-xl text-center">
+      <span class="material-symbols-outlined text-outline text-5xl mb-md">search_off</span>
+      <h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">No results found</h2>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mb-lg">No session data was found. Run a search from the home page.</p>
+      <a href="index.html"
+        class="bg-primary text-on-primary px-xl py-md rounded-lg font-title-md text-title-md hover:brightness-110 active:scale-95 transition-all inline-flex items-center gap-xs">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Back to Search
+      </a>
+    </div>
+
+    <!-- Results grid -->
+    <div id="results-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-md">
+      <!-- Cards injected by JS -->
+    </div>
+
+    <!-- Similarity distribution bar chart -->
+    <div id="dist-panel" class="hidden bg-surface-container border border-outline-variant rounded-xl p-lg mt-lg">
+      <h3 class="font-label-caps text-label-caps text-on-surface-variant mb-md flex items-center gap-xs">
+        <span class="material-symbols-outlined text-sm">bar_chart</span>
+        SIMILARITY DISTRIBUTION
+      </h3>
+      <div id="dist-bars" class="space-y-sm"></div>
+    </div>
+
+  </section>
+</main>
+
+<script>
+  /* ──────────────────────────────────────────────
+     Helpers
+  ────────────────────────────────────────────── */
+  function basename(p) {
+    return (p || '').split(/[\\/]/).pop() || p;
+  }
+
+  /* score → badge class */
+  function badgeClass(score) {
+    if (score >= 70) return 'badge-high';
+    if (score >= 40) return 'badge-mid';
+    return 'badge-low';
+  }
+
+  /* score → label */
+  function scoreLabel(score) {
+    return score.toFixed(1) + '%';
+  }
+
+
+  /* ──────────────────────────────────────────────
+     Render
+  ────────────────────────────────────────────── */
+  function renderResults(data) {
+    const results = data.results || [];
+    const queryPath = data.query_path || '';
+
+    /* Header pills */
+    document.getElementById('task-id').textContent = basename(queryPath) || '';
+    document.getElementById('pill-k').textContent = `${data.k || results.length} Results`;
+    document.getElementById('pill-emb').textContent =
+      data.embedding_time_ms != null ? `${data.embedding_time_ms.toFixed(1)}ms` : '—';
+    document.getElementById('pill-search').textContent =
+      data.search_time_ms != null ? `${data.search_time_ms.toFixed(2)}ms` : '—';
+    document.getElementById('pill-device').textContent = data.device || '—';
+
+    /* Source info */
+    document.getElementById('source-name').textContent = basename(queryPath);
+    document.getElementById('source-meta').textContent = queryPath.length > 30
+        ? '…' + queryPath.slice(-28) : queryPath;
+
+    const sourceThumb = document.getElementById('source-thumb');
+    if (data.query_gif_b64) {
+        sourceThumb.innerHTML = `<img class="w-full h-full object-cover"
+            src="data:image/gif;base64,${data.query_gif_b64}"
+            alt="Query video preview"
+            onerror="this.parentElement.innerHTML='<span class=\'material-symbols-outlined text-outline text-2xl\'>video_file</span>'">`;
+    } else if (data.query_path) {
+        sourceThumb.innerHTML = `<img class="w-full h-full object-cover"
+            src="http://localhost:5000/api/thumbnail?path=${encodeURIComponent((data.query_path).replace(/\\/g, '/'))}"
+            alt="Query video preview"
+            onerror="this.parentElement.innerHTML='<span class=\'material-symbols-outlined text-outline text-2xl\'>video_file</span>'">`;
+    }
+
+    if (!results.length) {
+      document.getElementById('empty-state').classList.remove('hidden');
+      document.getElementById('empty-state').style.display = 'flex';
+      return;
+    }
+
+    /* Grid */
+    const grid = document.getElementById('results-grid');
+    grid.innerHTML = '';
+
+    results.forEach((r, i) => {
+      const score = r.similarity_score;
+      const bClass = badgeClass(score);
+      const delay = (i * 50) + 'ms';
+      const name = basename(r.path || `result_${r.rank}`);
+      const ext = (name.split('.').pop() || '').toUpperCase();
+
+      const card = document.createElement('div');
+      card.className = 'video-card card-enter group flex flex-col bg-surface-container border border-outline-variant rounded-xl overflow-hidden cursor-pointer';
+      card.style.animationDelay = delay;
+
+      card.innerHTML = `
+        <div class="relative aspect-video bg-black overflow-hidden">
+          <img class="w-full h-full object-cover"
+            src="http://localhost:5000/api/thumbnail?path=${encodeURIComponent(r.path.replace(/\\/g, '/'))}"
+            alt="${name}"
+            loading="lazy">      
+          <!-- Score badge -->
+          <div class="absolute top-2 left-2 px-2 py-0.5 ${bClass} rounded font-bold text-body-sm">
+            ${scoreLabel(score)}
+          </div>
+          <!-- Rank pill -->
+          <div class="rank-pill">Rank ${r.rank}</div>
+        </div>
+
+        <div class="p-sm space-y-xs flex-1 flex flex-col justify-between">
+          <div>
+            <h3 class="font-body-sm text-on-surface truncate mb-xs" title="${r.path || ''}">${name}</h3>
+            <!-- Similarity bar -->
+            <div class="flex justify-between mb-xs">
+                <span class="font-label-caps text-label-caps text-outline">SIMILARITY</span>
+                <span class="font-code-mono text-code-mono text-primary">${r.similarity_score.toFixed(1)}%</span>
+            </div>
+            <div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden mb-xs">
+              <div class="h-full bg-primary rounded-full sim-bar-fill" style="width:0%" data-target="${score.toFixed(1)}"></div>
+            </div>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="font-code-mono text-code-mono text-outline">${ext || 'FILE'} · dist ${r.distance.toFixed(2)}</span>
+            <button class="flex items-center gap-1 text-primary hover:text-primary-fixed transition-colors"
+              onclick="inspectResult(${JSON.stringify(r).replace(/"/g,'&quot;')})">
+              <span class="material-symbols-outlined" style="font-size:18px;">analytics</span>
+              <span class="font-label-caps text-label-caps uppercase">Inspect</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      grid.appendChild(card);
+    });
+
+    /* Animate bars after render */
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.sim-bar-fill').forEach(el => {
+        el.style.width = el.dataset.target + '%';
+      });
+    });
+
+    /* Similarity distribution panel */
+    renderDistribution(results);
+  }
+
+  /* ──────────────────────────────────────────────
+     Distribution bar chart
+  ────────────────────────────────────────────── */
+  function renderDistribution(results) {
+    const panel = document.getElementById('dist-panel');
+    const barsEl = document.getElementById('dist-bars');
+    panel.classList.remove('hidden');
+    barsEl.innerHTML = '';
+
+    results.forEach(r => {
+      const score = r.similarity_score;
+      const name = basename(r.path || `result_${r.rank}`);
+      const bClass = badgeClass(score);
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-sm';
+      row.innerHTML = `
+        <span class="font-code-mono text-code-mono text-outline w-5 shrink-0 text-right">${r.rank}</span>
+        <span class="font-body-sm text-on-surface-variant truncate w-40 shrink-0" title="${name}">${name}</span>
+        <div class="flex-1 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+          <div class="h-full rounded-full sim-bar-fill ${score >= 70 ? 'bg-primary' : score >= 40 ? 'bg-secondary' : 'bg-outline'}"
+            style="width:0%" data-target="${score.toFixed(1)}"></div>
+        </div>
+        <span class="font-code-mono text-code-mono ${score >= 70 ? 'text-primary' : score >= 40 ? 'text-secondary' : 'text-outline'} w-12 text-right shrink-0">${score.toFixed(1)}%</span>
+      `;
+      barsEl.appendChild(row);
+    });
+
+    /* Animate after append */
+    requestAnimationFrame(() => {
+      document.querySelectorAll('#dist-bars .sim-bar-fill').forEach(el => {
+        el.style.width = el.dataset.target + '%';
+      });
+    });
+  }
+
+  /* ──────────────────────────────────────────────
+     Inspect modal (lightweight)
+  ────────────────────────────────────────────── */
+  function inspectResult(r) {
+    const score = r.similarity_score;
+    const name = basename(r.path || '');
+    alert(
+      `Rank: ${r.rank}\nFile: ${name}\nFull path: ${r.path || '—'}\nFAISS distance: ${r.distance.toFixed(6)}\nSimilarity score: ${score.toFixed(2)}%\nVector ID: ${r.id}`
+    );
+  }
+
+  /* ──────────────────────────────────────────────
+     Boot: read sessionStorage
+  ────────────────────────────────────────────── */
+  (function init() {
+    try {
+      const raw = sessionStorage.getItem('searchResults');
+      if (!raw) throw new Error('no data');
+      const data = JSON.parse(raw);
+      renderResults(data);
+    } catch {
+      const es = document.getElementById('empty-state');
+      es.classList.remove('hidden');
+      es.style.display = 'flex';
+    }
+  })();
+</script>
+</body>
+</html>
